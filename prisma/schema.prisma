@@ -1,0 +1,274 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  EXPERT
+  MODERATOR
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DELETED
+}
+
+enum ContentType {
+  MOVIE
+  SERIES
+  CARTOON
+}
+
+enum PersonRole {
+  ACTOR
+  DIRECTOR
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RecensionStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TrailerProvider {
+  YOUTUBE
+  VKVIDEO
+  RUTUBE
+  DIRECT
+}
+
+model User {
+  id                String         @id @default(uuid()) @db.Uuid
+  login             String         @unique @db.VarChar(50)
+  passwordHash      String         @map("password_hash") @db.VarChar(255)
+  role              UserRole       @default(USER)
+  status            UserStatus     @default(ACTIVE)
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  createdContents   Content[]      @relation("ContentCreatedBy")
+  ratings           Rating[]
+  reviews           Review[]       @relation("ReviewAuthor")
+  moderatedReviews  Review[]       @relation("ReviewModerator")
+  recensions        Recension[]    @relation("RecensionAuthor")
+  moderatedRecensions Recension[]  @relation("RecensionModerator")
+  favorites         Favorite[]
+  authSessions      AuthSession[]
+
+  @@map("users")
+}
+
+model Content {
+  id                      String           @id @default(uuid()) @db.Uuid
+  type                    ContentType
+  slug                    String           @unique @db.VarChar(255)
+  title                   String           @db.VarChar(255)
+  originalTitle           String?          @map("original_title") @db.VarChar(255)
+  shortDescription        String?          @map("short_description") @db.VarChar(500)
+  description             String?          @db.Text
+  posterUrl               String?          @map("poster_url") @db.VarChar(500)
+  bannerUrl               String?          @map("banner_url") @db.VarChar(500)
+  year                    Int              @db.SmallInt
+  ageRating               String?          @map("age_rating") @db.VarChar(10)
+  durationMinutes         Int?             @map("duration_minutes") @db.SmallInt
+  seasonsCount            Int?             @map("seasons_count") @db.SmallInt
+  episodesCount           Int?             @map("episodes_count") @db.SmallInt
+  externalRatingImdb      Decimal?         @map("external_rating_imdb") @db.Decimal(3, 1)
+  externalRatingKinopoisk Decimal?         @map("external_rating_kinopoisk") @db.Decimal(3, 1)
+  isPublished             Boolean          @default(false) @map("is_published")
+  isFeatured              Boolean          @default(false) @map("is_featured")
+  createdAt               DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById             String?          @map("created_by") @db.Uuid
+
+  createdBy               User?            @relation("ContentCreatedBy", fields: [createdById], references: [id])
+  genres                  ContentGenre[]
+  countries               ContentCountry[]
+  persons                 ContentPerson[]
+  trailers                Trailer[]
+  ratings                 Rating[]
+  reviews                 Review[]
+  recensions              Recension[]
+  favorites               Favorite[]
+
+  @@index([type])
+  @@index([year])
+  @@index([isPublished])
+  @@map("contents")
+}
+
+model Genre {
+  id       String         @id @default(uuid()) @db.Uuid
+  name     String         @unique @db.VarChar(100)
+  slug     String         @unique @db.VarChar(100)
+  contents ContentGenre[]
+
+  @@map("genres")
+}
+
+model Country {
+  id       String           @id @default(uuid()) @db.Uuid
+  name     String           @unique @db.VarChar(100)
+  code     String           @unique @db.Char(2)
+  contents ContentCountry[]
+
+  @@map("countries")
+}
+
+model Person {
+  id       String          @id @default(uuid()) @db.Uuid
+  fullName String          @map("full_name") @db.VarChar(255)
+  photoUrl String?         @map("photo_url") @db.VarChar(500)
+  contents ContentPerson[]
+
+  @@map("persons")
+}
+
+model ContentGenre {
+  contentId String  @map("content_id") @db.Uuid
+  genreId   String  @map("genre_id") @db.Uuid
+  content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  genre     Genre   @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, genreId])
+  @@map("content_genres")
+}
+
+model ContentCountry {
+  contentId String  @map("content_id") @db.Uuid
+  countryId String  @map("country_id") @db.Uuid
+  content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  country   Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, countryId])
+  @@map("content_countries")
+}
+
+model ContentPerson {
+  id            String     @id @default(uuid()) @db.Uuid
+  contentId     String     @map("content_id") @db.Uuid
+  personId      String     @map("person_id") @db.Uuid
+  roleType      PersonRole @map("role_type")
+  characterName String?    @map("character_name") @db.VarChar(255)
+  sortOrder     Int        @default(0) @map("sort_order") @db.SmallInt
+
+  content       Content    @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  person        Person     @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([contentId, roleType, sortOrder])
+  @@map("content_persons")
+}
+
+model Trailer {
+  id              String          @id @default(uuid()) @db.Uuid
+  contentId       String          @map("content_id") @db.Uuid
+  title           String?         @db.VarChar(255)
+  provider        TrailerProvider
+  videoUrl        String          @map("video_url") @db.VarChar(500)
+  previewImageUrl String?         @map("preview_image_url") @db.VarChar(500)
+  sortOrder       Int             @default(0) @map("sort_order") @db.SmallInt
+
+  content         Content         @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@map("trailers")
+}
+
+model Rating {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  contentId String   @map("content_id") @db.Uuid
+  score     Int      @db.SmallInt
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  review    Review?
+
+  @@unique([userId, contentId])
+  @@map("ratings")
+}
+
+model Review {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  contentId   String       @map("content_id") @db.Uuid
+  ratingId    String       @unique @map("rating_id") @db.Uuid
+  text        String       @db.Text
+  status      ReviewStatus @default(PENDING)
+  rejectionReason String?  @map("rejection_reason") @db.VarChar(500)
+  moderatedBy String?      @map("moderated_by") @db.Uuid
+  moderatedAt DateTime?    @map("moderated_at") @db.Timestamptz(6)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user        User         @relation("ReviewAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  content     Content      @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  rating      Rating       @relation(fields: [ratingId], references: [id], onDelete: Cascade)
+  moderator   User?        @relation("ReviewModerator", fields: [moderatedBy], references: [id])
+
+  @@unique([userId, contentId])
+  @@index([contentId, status, createdAt])
+  @@map("reviews")
+}
+
+model Recension {
+  id              String           @id @default(uuid()) @db.Uuid
+  expertUserId    String           @map("expert_user_id") @db.Uuid
+  contentId       String           @map("content_id") @db.Uuid
+  title           String           @db.VarChar(255)
+  text            String           @db.Text
+  status          RecensionStatus  @default(PENDING)
+  rejectionReason String?          @map("rejection_reason") @db.VarChar(500)
+  moderatedBy     String?          @map("moderated_by") @db.Uuid
+  publishedAt     DateTime?        @map("published_at") @db.Timestamptz(6)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  expert          User             @relation("RecensionAuthor", fields: [expertUserId], references: [id], onDelete: Cascade)
+  content         Content          @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  moderator       User?            @relation("RecensionModerator", fields: [moderatedBy], references: [id])
+
+  @@index([contentId, status, publishedAt])
+  @@map("recensions")
+}
+
+model Favorite {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  contentId String   @map("content_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contentId])
+  @@map("favorites")
+}
+
+model AuthSession {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  refreshTokenHash  String   @map("refresh_token_hash") @db.VarChar(255)
+  expiresAt         DateTime @map("expires_at") @db.Timestamptz(6)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("auth_sessions")
+}

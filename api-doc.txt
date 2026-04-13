@@ -1,0 +1,1162 @@
+CineScope Backend API Documentation for AI Clients
+=================================================
+
+Purpose
+-------
+This file describes which HTTP requests to use, what to send, what headers are needed, what responses to expect, and what to check when the server returns HTTP 500.
+
+Base URL
+--------
+http://localhost:3000/api
+
+Swagger
+-------
+http://localhost:3000/docs
+
+General Rules
+-------------
+1. All protected routes require header:
+   Authorization: Bearer <accessToken>
+
+2. Content-Type for POST/PATCH/DELETE with body:
+   Content-Type: application/json
+
+3. User roles supported by backend:
+   USER, EXPERT, MODERATOR, ADMIN
+
+4. Public routes do not require Authorization header.
+
+5. Validation is strict. Unknown body fields may cause 400 because whitelist + forbidNonWhitelisted is enabled.
+
+6. Access token is used for protected requests.
+   Refresh token is used only in auth refresh/logout flows.
+
+7. Global prefix is /api, so route "/auth/login" must be called as:
+   http://localhost:3000/api/auth/login
+
+=================================================
+AUTH API
+=================================================
+
+1) Register user
+----------------
+Method: POST
+Path: /auth/register
+Auth: no
+Body:
+{
+  "login": "user01",
+  "password": "test1234"
+}
+Rules:
+- login: 3-50 chars, lowercase letters, digits, underscore, dot, dash
+- password: min 8 chars, must contain letters and digits
+
+Success response:
+{
+  "id": "uuid",
+  "login": "user01",
+  "role": "USER",
+  "createdAt": "ISO date"
+}
+
+Common errors:
+- 400 invalid login/password format
+- 409 login already exists
+- 500 usually means database is unavailable or migration/schema issue
+
+2) Login
+--------
+Method: POST
+Path: /auth/login
+Auth: no
+Body:
+{
+  "login": "user01",
+  "password": "test1234"
+}
+
+Success response:
+{
+  "accessToken": "jwt",
+  "refreshToken": "jwt",
+  "user": {
+    "id": "uuid",
+    "login": "user01",
+    "role": "USER"
+  }
+}
+
+Common errors:
+- 401 wrong credentials
+- 401 account deactivated
+- 500 database/jwt/session storage issue
+
+3) Refresh access token
+-----------------------
+Method: POST
+Path: /auth/refresh
+Auth: no
+Body:
+{
+  "refreshToken": "jwt"
+}
+
+Success response:
+{
+  "accessToken": "new_jwt"
+}
+
+Common errors:
+- 400 invalid JWT format in request body
+- 401 refresh token invalid, expired or revoked
+- 500 auth_sessions table missing or database failure
+
+4) Logout
+---------
+Method: POST
+Path: /auth/logout
+Auth: yes
+Headers:
+Authorization: Bearer <accessToken>
+Body:
+{
+  "refreshToken": "jwt"
+}
+
+Success response:
+{
+  "message": "Выход выполнен успешно"
+}
+
+Common errors:
+- 401 no access token
+- 401 refresh token does not belong to current user
+- 401 refresh token not found
+- 500 database issue with auth_sessions
+
+=================================================
+PUBLIC CONTENT API
+=================================================
+
+5) Home page data
+-----------------
+Method: GET
+Path: /home
+Auth: optional
+
+Success response example on empty DB:
+{
+  "heroBanner": null,
+  "newReleases": [],
+  "top10": [],
+  "inCinema": [],
+  "movies": [],
+  "series": [],
+  "cartoons": [],
+  "genres": []
+}
+
+6) Catalog
+----------
+Method: GET
+Path: /catalog
+Auth: optional
+Query params:
+- type: MOVIE | SERIES | CARTOON
+- genre_ids: comma separated UUID list
+- country_ids: comma separated UUID list
+- year_from: number
+- year_to: number
+- rating_from: 1..5
+- search: string
+- sort: popular | year_desc | year_asc | title_asc | rating_desc
+- page: number >= 1
+- limit: number 1..100
+
+Example:
+GET /catalog?type=MOVIE&search=incep&page=1&limit=20
+
+Success response:
+{
+  "data": [
+    {
+      "id": "uuid",
+      "slug": "inception",
+      "type": "MOVIE",
+      "title": "Inception",
+      "originalTitle": "Inception",
+      "posterUrl": "https://...",
+      "year": 2010,
+      "ageRating": "16+",
+      "genres": [
+        { "name": "Фантастика", "slug": "fantastika" }
+      ],
+      "siteRating": 4.5,
+      "imdbRating": 8.8,
+      "kinopoiskRating": 8.7,
+      "seriesInfo": null,
+      "isFavorite": true,
+      "myRating": 5
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "pages": 1,
+    "hasNext": false,
+    "hasPrev": false
+  },
+  "filters": {
+    "genres": [],
+    "countries": [],
+    "yearRange": {
+      "min": 2010,
+      "max": 2010
+    }
+  }
+}
+
+7) Search
+---------
+Method: GET
+Path: /search
+Auth: optional
+Query params:
+- query: string
+- limit: number (max 10 effectively)
+
+Example:
+GET /search?query=inception&limit=10
+
+Success response:
+{
+  "data": [ ...cards... ],
+  "total": 1
+}
+
+8) Genres list
+--------------
+Method: GET
+Path: /genres
+Auth: no
+Response:
+[
+  {
+    "id": "uuid",
+    "name": "Фантастика",
+    "slug": "fantastika"
+  }
+]
+
+9) Countries list
+-----------------
+Method: GET
+Path: /countries
+Auth: no
+Response:
+[
+  {
+    "id": "uuid",
+    "name": "США",
+    "code": "US"
+  }
+]
+
+10) New releases
+----------------
+Method: GET
+Path: /contents/new-releases
+Auth: optional
+Query params:
+- type: MOVIE | SERIES | CARTOON (optional)
+- limit: number
+
+Response:
+{
+  "data": [ ...content cards... ]
+}
+
+11) Content details by slug
+---------------------------
+Method: GET
+Path: /contents/:slug
+Auth: optional
+Example:
+GET /contents/inception
+
+Success response:
+{
+  "id": "uuid",
+  "slug": "inception",
+  "type": "MOVIE",
+  "title": "Inception",
+  "originalTitle": "Inception",
+  "shortDescription": "...",
+  "description": "...",
+  "posterUrl": "https://...",
+  "bannerUrl": "https://...",
+  "year": 2010,
+  "ageRating": "16+",
+  "durationMinutes": 148,
+  "seriesInfo": null,
+  "genres": [ ... ],
+  "countries": [ ... ],
+  "directors": [ ... ],
+  "actors": [ ... ],
+  "trailers": [ ... ],
+  "ratings": {
+    "siteRating": 4.5,
+    "ratingsCount": 2,
+    "distribution": {
+      "1": 0,
+      "2": 0,
+      "3": 0,
+      "4": 50,
+      "5": 50
+    },
+    "imdbRating": 8.8,
+    "kinopoiskRating": 8.7,
+    "myRating": 5
+  },
+  "reviewStats": {
+    "reviewsCount": 1,
+    "recensionsCount": 1
+  },
+  "userFlags": {
+    "isFavorite": true,
+    "myRating": 5,
+    "canRate": false,
+    "canReview": false
+  }
+}
+
+Common errors:
+- 404 content with slug not found or not published
+- 500 broken relations/database issues
+
+12) Similar content by content ID
+---------------------------------
+Method: GET
+Path: /contents/:id/similar
+Auth: optional
+Example:
+GET /contents/<contentId>/similar
+Response:
+{
+  "data": [ ...content cards... ]
+}
+
+13) Recommended content by content ID
+-------------------------------------
+Method: GET
+Path: /contents/:id/recommended
+Auth: optional
+Example:
+GET /contents/<contentId>/recommended
+Response:
+{
+  "data": [ ...content cards... ]
+}
+
+=================================================
+RATINGS / REVIEWS / RECENSIONS API
+=================================================
+
+14) Create rating
+-----------------
+Method: POST
+Path: /contents/:id/rating
+Auth: yes
+Body:
+{
+  "score": 5
+}
+Rules:
+- score must be integer 1..5
+
+Success response:
+{
+  "message": "Оценка сохранена",
+  "rating": {
+    "id": "uuid",
+    "score": 5,
+    "createdAt": "ISO date"
+  },
+  "ratingSummary": {
+    "siteRating": 5,
+    "ratingsCount": 1,
+    "distribution": {
+      "1": 0,
+      "2": 0,
+      "3": 0,
+      "4": 0,
+      "5": 100
+    },
+    "imdbRating": 8.8,
+    "kinopoiskRating": 8.7,
+    "myRating": 5
+  }
+}
+
+Common errors:
+- 401 unauthorized
+- 404 content not found or not published
+- 409 user already rated this content
+- 500 ratings table/database error
+
+15) Rating summary
+------------------
+Method: GET
+Path: /contents/:id/rating-summary
+Auth: optional
+Response:
+{
+  "siteRating": 5,
+  "ratingsCount": 1,
+  "distribution": {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 100
+  },
+  "imdbRating": 8.8,
+  "kinopoiskRating": 8.7,
+  "myRating": 5
+}
+
+16) List reviews
+----------------
+Method: GET
+Path: /contents/:id/reviews
+Auth: optional
+Query params:
+- page
+- limit
+- sort: newest | oldest
+
+Success response:
+{
+  "data": [
+    {
+      "id": "uuid",
+      "author": {
+        "id": "uuid",
+        "login": "user02",
+        "role": "USER"
+      },
+      "rating": 4,
+      "text": "Очень сильный фильм...",
+      "status": "APPROVED",
+      "createdAt": "ISO date",
+      "isMine": false,
+      "canDelete": false
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 1,
+    "pages": 1
+  }
+}
+
+Notes:
+- Public users see APPROVED reviews.
+- Review owner may also see own PENDING/REJECTED review at page 1.
+
+17) Create review
+-----------------
+Method: POST
+Path: /contents/:id/reviews
+Auth: yes
+Body:
+{
+  "score": 4,
+  "text": "Очень сильный фильм, интересная идея и отличная постановка."
+}
+Rules:
+- score integer 1..5
+- text min length 10
+- if user already has rating/review for same content, request will fail
+
+Success response:
+{
+  "message": "Отзыв отправлен на модерацию",
+  "review": {
+    "id": "uuid",
+    "status": "PENDING",
+    "createdAt": "ISO date"
+  }
+}
+
+Common errors:
+- 401 unauthorized
+- 404 content not found or not published
+- 409 user already rated/reviewed this content
+- 500 transaction/database error
+
+18) Delete review
+-----------------
+Method: DELETE
+Path: /reviews/:id
+Auth: yes
+Success response:
+{
+  "message": "Отзыв удалён"
+}
+
+Common errors:
+- 401 unauthorized
+- 403 insufficient rights
+- 404 review not found
+
+19) Update review (currently disabled)
+--------------------------------------
+Method: PATCH
+Path: /reviews/:id
+Auth: yes
+Expected response:
+- HTTP 501
+{
+  "message": "Редактирование отзывов будет доступно в v1.1"
+}
+
+20) List recensions
+-------------------
+Method: GET
+Path: /contents/:id/recensions
+Auth: no
+Query params:
+- page
+- limit
+
+Success response:
+{
+  "data": [
+    {
+      "id": "uuid",
+      "title": "Сильная работа Нолана",
+      "author": {
+        "id": "uuid",
+        "login": "expert01",
+        "role": "EXPERT"
+      },
+      "text": "Long text...",
+      "status": "APPROVED",
+      "publishedAt": "ISO date"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "total": 1
+  }
+}
+
+21) Create recension (EXPERT only)
+----------------------------------
+Method: POST
+Path: /contents/:id/recensions
+Auth: yes
+Required role: EXPERT (ADMIN also passes hierarchy in guard logic only if role metadata allows through hierarchy)
+Body:
+{
+  "title": "Сильная работа Нолана",
+  "text": "At least 200 characters long ..."
+}
+Rules:
+- title length 5..255
+- text min length 200
+
+Success response:
+{
+  "message": "Рецензия отправлена на модерацию",
+  "recension": {
+    "id": "uuid",
+    "status": "PENDING",
+    "createdAt": "ISO date"
+  }
+}
+
+Common errors:
+- 401 unauthorized
+- 403 insufficient rights
+- 404 content not found
+- 500 database error
+
+=================================================
+PROFILE / FAVORITES API
+=================================================
+
+22) Current profile
+-------------------
+Method: GET
+Path: /profile/me
+Auth: yes
+Success response:
+{
+  "id": "uuid",
+  "login": "user01",
+  "role": "USER",
+  "createdAt": "ISO date",
+  "stats": {
+    "ratingsCount": 1,
+    "reviewsCount": 0,
+    "favoritesCount": 1,
+    "recensionsCount": null
+  }
+}
+
+23) My reviews
+--------------
+Method: GET
+Path: /profile/reviews
+Auth: yes
+Query params:
+- page
+- limit
+
+Response:
+{
+  "data": [
+    {
+      "id": "uuid",
+      "content": {
+        "id": "uuid",
+        "slug": "inception",
+        "title": "Inception",
+        "posterUrl": "https://..."
+      },
+      "rating": 4,
+      "text": "...",
+      "status": "PENDING",
+      "createdAt": "ISO date",
+      "canDelete": true
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "total": 1
+  }
+}
+
+24) My ratings
+--------------
+Method: GET
+Path: /profile/ratings
+Auth: yes
+Query params:
+- page
+- limit
+
+25) My favorites
+----------------
+Method: GET
+Path: /profile/favorites
+Auth: yes
+Query params:
+- page
+- limit
+- sort: newest | oldest | title_asc
+
+Response:
+{
+  "data": [ ...favorite content cards... ],
+  "pagination": {
+    "page": 1,
+    "total": 1
+  }
+}
+
+26) Add favorite
+----------------
+Method: POST
+Path: /favorites/:contentId
+Auth: yes
+Success response:
+{
+  "message": "Добавлено в избранное",
+  "contentId": "uuid"
+}
+
+Common errors:
+- 404 content not found or not published
+- 409 already added
+
+27) Remove favorite
+-------------------
+Method: DELETE
+Path: /favorites/:contentId
+Auth: yes
+Success response:
+{
+  "message": "Удалено из избранного"
+}
+
+Common errors:
+- 404 favorite not found
+
+28) Change password
+-------------------
+Method: PATCH
+Path: /profile/password
+Auth: yes
+Body:
+{
+  "currentPassword": "test1234",
+  "newPassword": "newpass123"
+}
+Rules:
+- newPassword: min 8 chars, letters + digits required
+
+Success response:
+{
+  "message": "Пароль успешно изменён"
+}
+
+Notes:
+- all active sessions are revoked after password change
+
+29) Deactivate account
+----------------------
+Method: DELETE
+Path: /profile/me
+Auth: yes
+Body:
+{
+  "password": "newpass123"
+}
+
+Success response:
+{
+  "message": "Аккаунт деактивирован"
+}
+
+Notes:
+- password field is optional in current implementation
+- account status becomes DELETED
+- sessions are revoked
+
+=================================================
+MODERATION API
+=================================================
+
+All moderation routes require:
+- Authorization header
+- role MODERATOR (ADMIN also has sufficient hierarchy)
+
+30) Review moderation queue
+---------------------------
+Method: GET
+Path: /moderation/reviews
+Query params:
+- status: PENDING | APPROVED | REJECTED (optional, default PENDING)
+- page
+- limit
+
+Response:
+{
+  "data": [
+    {
+      "id": "uuid",
+      "author": {
+        "id": "uuid",
+        "login": "user02"
+      },
+      "content": {
+        "id": "uuid",
+        "slug": "inception",
+        "title": "Inception"
+      },
+      "rating": 4,
+      "text": "...",
+      "status": "PENDING",
+      "createdAt": "ISO date"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "total": 1
+  }
+}
+
+31) Approve review
+------------------
+Method: POST
+Path: /moderation/reviews/:id/approve
+Response:
+{
+  "message": "Отзыв одобрен",
+  "review": {
+    "id": "uuid",
+    "status": "APPROVED",
+    "moderatedAt": "ISO date"
+  }
+}
+
+32) Reject review
+-----------------
+Method: POST
+Path: /moderation/reviews/:id/reject
+Body:
+{
+  "reason": "Нецензурная лексика"
+}
+Response:
+{
+  "message": "Отзыв отклонён",
+  "review": {
+    "id": "uuid",
+    "status": "REJECTED"
+  }
+}
+
+33) Recension moderation queue
+------------------------------
+Method: GET
+Path: /moderation/recensions
+Query params:
+- status: PENDING | APPROVED | REJECTED (optional, default PENDING)
+- page
+- limit
+
+34) Approve recension
+---------------------
+Method: POST
+Path: /moderation/recensions/:id/approve
+Response:
+{
+  "message": "Рецензия одобрена и опубликована",
+  "recension": {
+    "id": "uuid",
+    "status": "APPROVED",
+    "publishedAt": "ISO date"
+  }
+}
+
+35) Reject recension
+--------------------
+Method: POST
+Path: /moderation/recensions/:id/reject
+Body:
+{
+  "reason": "Недостаточно аргументации"
+}
+Response:
+{
+  "message": "Рецензия отклонена",
+  "recension": {
+    "id": "uuid",
+    "status": "REJECTED"
+  }
+}
+
+36) Moderation stats
+--------------------
+Method: GET
+Path: /moderation/stats
+Response:
+{
+  "reviews": {
+    "pending": 1,
+    "approved": 0
+  },
+  "recensions": {
+    "pending": 1,
+    "approved": 0
+  },
+  "totalPending": 2
+}
+
+=================================================
+ADMIN API
+=================================================
+
+All admin routes require:
+- Authorization header
+- role ADMIN
+
+37) List admin contents
+-----------------------
+Method: GET
+Path: /admin/contents
+Query params:
+- page
+- limit
+- type
+- published=true|false
+- search
+
+Response:
+{
+  "data": [
+    {
+      "id": "uuid",
+      "type": "MOVIE",
+      "slug": "inception",
+      "title": "Inception",
+      "year": 2010,
+      "isPublished": true,
+      "ratingsCount": 1,
+      "reviewsCount": 1,
+      "createdAt": "ISO date",
+      "updatedAt": "ISO date"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "total": 1
+  }
+}
+
+38) Create content
+------------------
+Method: POST
+Path: /admin/contents
+Body:
+{
+  "type": "MOVIE",
+  "title": "Inception",
+  "slug": "inception",
+  "year": 2010,
+  "originalTitle": "Inception",
+  "shortDescription": "Фильм о снах",
+  "description": "Полное описание",
+  "posterUrl": "https://example.com/poster.jpg",
+  "bannerUrl": "https://example.com/banner.jpg",
+  "ageRating": "16+",
+  "durationMinutes": 148,
+  "seasonsCount": null,
+  "episodesCount": null,
+  "externalRatingImdb": 8.8,
+  "externalRatingKinopoisk": 8.7,
+  "genreIds": ["genre_uuid"],
+  "countryIds": ["country_uuid"],
+  "directorIds": ["person_uuid"],
+  "actorIds": ["person_uuid"],
+  "trailers": [
+    {
+      "title": "Официальный трейлер",
+      "provider": "YOUTUBE",
+      "videoUrl": "https://youtube.com/watch?v=test",
+      "previewImageUrl": "https://example.com/preview.jpg"
+    }
+  ],
+  "isPublished": true,
+  "isFeatured": true
+}
+
+Success response:
+{
+  "message": "Контент создан",
+  "id": "uuid",
+  "slug": "inception"
+}
+
+Common errors:
+- 400 validation error
+- 409 slug already exists
+- 500 usually invalid foreign keys, bad relation data, database issue
+
+39) Update content
+------------------
+Method: PATCH
+Path: /admin/contents/:id
+Body: any subset of create content fields
+Success response:
+{
+  "message": "Контент обновлён",
+  "id": "uuid"
+}
+
+40) Delete content
+------------------
+Method: DELETE
+Path: /admin/contents/:id
+Response:
+{
+  "message": "Контент удалён"
+}
+
+41) List users
+--------------
+Method: GET
+Path: /admin/users
+Query params:
+- page
+- limit
+- role
+- status
+- search
+
+42) Update user role
+--------------------
+Method: PATCH
+Path: /admin/users/:id/role
+Body:
+{
+  "role": "MODERATOR"
+}
+Response:
+{
+  "message": "Роль пользователя обновлена",
+  "userId": "uuid",
+  "newRole": "MODERATOR"
+}
+
+43) Deactivate user
+-------------------
+Method: DELETE
+Path: /admin/users/:id
+Response:
+{
+  "message": "Пользователь деактивирован",
+  "userId": "uuid"
+}
+
+44) Genres admin CRUD
+---------------------
+GET /admin/genres
+POST /admin/genres
+PATCH /admin/genres/:id
+DELETE /admin/genres/:id
+
+Create genre body:
+{
+  "name": "Фантастика",
+  "slug": "fantastika"
+}
+
+45) Countries admin CRUD
+------------------------
+GET /admin/countries
+POST /admin/countries
+PATCH /admin/countries/:id
+DELETE /admin/countries/:id
+
+Create country body:
+{
+  "name": "США",
+  "code": "US"
+}
+
+46) Persons admin CRUD
+----------------------
+GET /admin/persons
+POST /admin/persons
+PATCH /admin/persons/:id
+DELETE /admin/persons/:id
+
+Create person body:
+{
+  "fullName": "Christopher Nolan",
+  "photoUrl": "https://example.com/nolan.jpg"
+}
+
+=================================================
+ROLE PREPARATION NOTE
+=================================================
+
+There is no public bootstrap endpoint for the first admin user.
+Recommended setup for testing:
+1. Register users via /auth/register
+2. Manually change roles in database to ADMIN / MODERATOR / EXPERT
+3. Login again and use returned access tokens for role-protected APIs
+
+=================================================
+WHAT TO DO IF SERVER RETURNS HTTP 500
+=================================================
+
+HTTP 500 means server-side failure. For this backend, the most likely reasons are:
+
+1. PostgreSQL is not running
+   Check:
+   - docker-compose up -d
+   - port 5432 is available
+
+2. DATABASE_URL is wrong
+   Expected example:
+   postgresql://postgres:postgres@localhost:5432/cinescope?schema=public
+
+3. Prisma tables do not exist
+   Run migrations:
+   - npx prisma generate
+   - npx prisma migrate dev --name init
+
+4. Database schema does not match code
+   Example symptoms:
+   - auth login/refresh/logout fail because auth_sessions table is missing
+   - content/reviews fail because relations are missing
+
+5. Invalid foreign keys in admin create/update content
+   Example:
+   - genreIds contain IDs that do not exist
+   - countryIds contain IDs that do not exist
+   - directorIds/actorIds contain person IDs that do not exist
+
+6. Duplicate/constraint errors not handled by explicit exceptions
+   Some unique or foreign key issues may bubble up as 500 instead of clean 409/400 if not caught.
+
+7. JWT/session problems
+   Example:
+   - refresh token flow fails because auth_sessions cannot be read/written
+   - JWT secrets are missing or changed between login and refresh
+
+8. Route is correct but DB data is inconsistent
+   Example:
+   - content references deleted relations
+   - malformed existing records
+
+Fast debug checklist for 500
+----------------------------
+1. Confirm server is running.
+2. Confirm PostgreSQL is running.
+3. Confirm .env exists and DATABASE_URL is valid.
+4. Run prisma migration/generate again.
+5. Look at NestJS console stack trace.
+6. Re-test same request in Swagger/Postman.
+7. If failing on admin content create/update, verify all relation IDs exist first.
+8. If failing on protected routes, verify Authorization header is exactly:
+   Authorization: Bearer <token>
+9. If failing on refresh/logout, verify refreshToken is the exact one returned by login.
+
+How AI should react to 500
+--------------------------
+If API returns 500, do not assume request format is wrong immediately.
+AI should check in this order:
+1. Is this route protected and missing token?
+2. Is request body valid according to schema?
+3. Does referenced content/user/genre/country/person exist?
+4. Is database initialized and migrated?
+5. Is this likely a backend bug or unhandled exception?
+
+Expected non-500 alternatives
+-----------------------------
+Prefer interpreting these statuses as business logic responses:
+- 400 = validation error
+- 401 = unauthorized / bad credentials / invalid token
+- 403 = insufficient role/permissions
+- 404 = entity not found
+- 409 = conflict / duplicate / already processed
+- 501 = endpoint intentionally not implemented
+- 500 = unexpected server failure or infrastructure/database issue
+
+=================================================
+MINIMAL TEST FLOW FOR AI
+=================================================
+
+1. Register user -> /auth/register
+2. Login -> /auth/login
+3. If admin token exists, create genre/country/person/content
+4. Read content details -> /contents/:slug
+5. As user, add rating -> /contents/:id/rating
+6. As second user, add review -> /contents/:id/reviews
+7. As moderator, approve review -> /moderation/reviews/:id/approve
+8. As expert, create recension -> /contents/:id/recensions
+9. As moderator, approve recension -> /moderation/recensions/:id/approve
+10. As user, add favorite -> /favorites/:contentId
+11. Read profile -> /profile/me
+
+End of file.
