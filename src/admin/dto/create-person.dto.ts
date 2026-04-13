@@ -1,7 +1,6 @@
 import {
   IsOptional,
   IsString,
-  IsUrl,
   MaxLength,
   MinLength,
 } from "class-validator";
@@ -13,6 +12,6 @@ export class CreatePersonDto {
   fullName!: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   photoUrl?: string;
 }

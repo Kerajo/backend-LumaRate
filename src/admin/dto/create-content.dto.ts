@@ -29,7 +29,7 @@ class TrailerDto {
   videoUrl!: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   previewImageUrl?: string;
 }
 
@@ -65,11 +65,11 @@ export class CreateContentDto {
   description?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   posterUrl?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   bannerUrl?: string;
 
   @IsOptional()
